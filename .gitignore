@@ -1,0 +1,10 @@
+*.vcd
+*.elf
+*.o
+*.mem
+*.raw
+*.xxd
+*.log
+*.png
+build/
+obj_dir/
