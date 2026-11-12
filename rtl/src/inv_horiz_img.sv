@@ -37,8 +37,8 @@ module inv_horiz_img
     logic flush;
 
     assign s_thandshake = s_tvalid && s_tready;
-    assign s_tready = m_tready && !flush;
-    assign last_row_out = (rows_cnt == IMG_HEIGHT); 
+    assign s_tready = m_tready && !flush && !last_row_out;
+    assign last_row_out = (rows_cnt == IMG_HEIGHT-1); 
 
     always_ff @(posedge clk) begin
         if (!rstn) begin
@@ -51,15 +51,56 @@ module inv_horiz_img
     always_ff @(posedge clk) begin
         if (!rstn) begin
             rows_cnt <= '0;
+        end else begin
+            if (flush) begin
+                rows_cnt <= '0;
+            end else if (out_line_ready && 
+                         head_direct == HEAD_STAY && 
+                         s_thandshake
+            ) begin
+                    rows_cnt <= rows_cnt + 1;
+            end
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rstn) begin
             m_tlast <= 1'b0;
         end else begin
-            m_tlast <= 1'b0;
-            if (head_direct == HEAD_STAY) begin
-                if (s_thandshake) begin
-                    rows_cnt <= rows_cnt + 1;
-                end else if (m_tready) begin
-                    m_tlast <= 1'b1;
-                    rows_cnt <= '0;
+            m_tlast <= (rows_cnt == IMG_HEIGHT-1) && head_direct == HEAD_STAY && m_tready;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rstn) begin
+            line_head <= '0;
+        end else begin
+            if (flush) begin
+                line_head <= '0;
+            end else if (s_thandshake || (last_row_out & m_tready)) begin
+                if (head_direct == HEAD_FWD)
+                    line_head <= line_head + 1;
+                else if (head_direct == HEAD_BACK)
+                    line_head <= line_head - 1;
+            end
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rstn) begin
+            head_direct <= HEAD_FWD;
+        end else begin
+            if (flush) begin
+                head_direct <= HEAD_FWD;
+            end else if (s_thandshake || (last_row_out & m_tready)) begin
+                if (line_head == IMG_WIDTH-2 && head_direct == HEAD_FWD || //the second-to-last one moves forward
+                    line_head == 1 && head_direct == HEAD_BACK // OR the first one goes backward
+                ) begin
+                    head_direct <= HEAD_STAY;
+                end else if (line_head == IMG_WIDTH-1) begin
+                    head_direct <= HEAD_BACK;
+                end else if (~|line_head) begin // line_head == 0
+                    head_direct <= HEAD_FWD;
                 end
             end
         end
@@ -67,44 +108,34 @@ module inv_horiz_img
 
     always_ff @(posedge clk) begin
         if (!rstn) begin
-            line_head <= '0;
-            head_direct <= HEAD_FWD;
             out_line_ready <= 1'b0;
-            m_tvalid <= 1'b0;
         end else begin
-            if (s_thandshake || (last_row_out & m_tready)) begin
-
-                // output when 0 line is saved
-                if (out_line_ready) begin
-                    m_tdata <= line_buf[line_head];
-                    m_tvalid <= 1'b1;
-                end
-
-                // head move
-                if (head_direct == HEAD_FWD)
-                    line_head <= line_head + 1;
-                else if (head_direct == HEAD_BACK)
-                    line_head <= line_head - 1;
-
-                // head direction change
-                if (line_head == IMG_WIDTH-2 && head_direct == HEAD_FWD || //the second-to-last one moves forward
-                    line_head == 1 && head_direct == HEAD_BACK // OR the first one goes backward
-                ) begin
-                    head_direct <= HEAD_STAY;
-                end else if (line_head == IMG_WIDTH-1) begin
-                    head_direct <= HEAD_BACK;
-                    out_line_ready <= 1'b1;
-                end else if (~|line_head) begin // line_head == 0
-                    head_direct <= HEAD_FWD;
-                end
-            end else if (m_tready) begin
-                m_tvalid <= 1'b0;
-            end
-
             if (flush) begin
                 out_line_ready <= 1'b0;
-                head_direct <= HEAD_FWD;
-                line_head <= '0;
+            end else if (s_thandshake || (last_row_out & m_tready)) begin
+                if (line_head == IMG_WIDTH-1) begin
+                    out_line_ready <= 1'b1;
+                end
+            end
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (!rstn) begin
+            m_tvalid <= 1'b0;
+        end else if (flush) begin
+            m_tvalid <= 1'b0;
+        end else if (s_thandshake || (last_row_out & m_tready)) begin
+            if (out_line_ready) m_tvalid <= 1'b1;
+        end else if (m_tready) begin
+            m_tvalid <= 1'b0;
+        end
+    end
+
+    always_ff @(posedge clk) begin
+        if (s_thandshake || (last_row_out & m_tready)) begin
+            if (out_line_ready) begin
+                m_tdata <= line_buf[line_head];
             end
         end
     end
