@@ -278,7 +278,7 @@ module tb_top;
 
         while (!test_done) begin
             @(posedge clk);
-            if (sent_cnt >= N_PIX) drain_req = 1'b1;
+            if (recv_cnt >= N_PIX) drain_req = 1'b1;
 
             if (sent_cnt >= N_PIX && recv_cnt >= N_PIX) begin
                 test_done = 1'b1;
